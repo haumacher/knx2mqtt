@@ -23,7 +23,7 @@ public class KNXConnector extends Thread implements NetworkLinkListener
 	public void connect() throws KNXException, InterruptedException
 	{
 		int knxConnectionType=KNXNetworkLinkIP.TUNNELING;
-		String connType=System.getProperty("knx2mqtt.knx.type");
+		String connType=System.getProperty(PropertyNames.KNX2MQTT_KNX_TYPE);
 		if(connType!=null)
 		{
 			if("TUNNELING".equals(connType))
@@ -50,9 +50,9 @@ public class KNXConnector extends Thread implements NetworkLinkListener
 
 	private void connectIP(int knxConnectionType) throws KNXException, InterruptedException
 	{
-		String hostIP=System.getProperty("knx2mqtt.knx.ip","setme");
-		int port=Integer.getInteger("knx2mqtt.knx.port", KNXnetIPConnection.DEFAULT_PORT).intValue();
-		String localIP=System.getProperty("knx2mqtt.knx.localip");
+		String hostIP=System.getProperty(PropertyNames.KNX2MQTT_KNX_IP,"setme");
+		int port=Integer.getInteger(PropertyNames.KNX2MQTT_KNX_PORT, KNXnetIPConnection.DEFAULT_PORT).intValue();
+		String localIP=System.getProperty(PropertyNames.KNX2MQTT_KNX_LOCALIP);
 		InetSocketAddress local;
 		if(localIP!=null)
 		{

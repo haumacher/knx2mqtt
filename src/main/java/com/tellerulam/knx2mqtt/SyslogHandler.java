@@ -12,7 +12,7 @@ public class SyslogHandler extends Handler
 {
 	static void readConfig() throws SecurityException, IOException
 	{
-		if(System.getProperty("java.util.logging.config.file")==null)
+		if(System.getProperty(PropertyNames.JAVA_UTIL_LOGGING_CONFIG_FILE)==null)
 		{
 			LogManager.getLogManager().readConfiguration(SyslogHandler.class.getResourceAsStream("/logging.properties"));
 		}

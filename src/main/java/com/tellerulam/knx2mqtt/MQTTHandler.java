@@ -23,7 +23,7 @@ public class MQTTHandler
 	private final String topicPrefix;
 	private MQTTHandler()
 	{
-		String tp=System.getProperty("knx2mqtt.mqtt.topic","knx");
+		String tp=System.getProperty(PropertyNames.KNX2MQTT_MQTT_TOPIC,"knx");
 		if(!tp.endsWith("/"))
 			tp+="/";
 		topicPrefix=tp;
@@ -129,8 +129,8 @@ public class MQTTHandler
 
 	private void doInit() throws MqttException
 	{
-		String server=System.getProperty("knx2mqtt.mqtt.server","tcp://localhost:1883");
-		String clientID=System.getProperty("knx2mqtt.mqtt.clientid","knx2mqtt");
+		String server=System.getProperty(PropertyNames.KNX2MQTT_MQTT_SERVER,"tcp://localhost:1883");
+		String clientID=System.getProperty(PropertyNames.KNX2MQTT_MQTT_CLIENTID,"knx2mqtt");
 		mqttc=new MqttClient(server,clientID,new MemoryPersistence());
 		mqttc.setCallback(new MqttCallback() {
 			@Override

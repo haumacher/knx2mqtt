@@ -133,7 +133,7 @@ public class GroupAddressManager
 	 */
 	static void loadGroupAddressTable()
 	{
-		String gaFile = System.getProperty("knx2mqtt.knx.groupaddresstable");
+		String gaFile = System.getProperty(PropertyNames.KNX2MQTT_KNX_GROUPADDRESSTABLE);
 		if(gaFile == null)
 		{
 			L.config("No Group Address table specified");
@@ -184,9 +184,9 @@ public class GroupAddressManager
 	@SuppressWarnings("unchecked")
 	static void loadETS4Project()
 	{
-		String gaFile = System.getProperty("knx2mqtt.knx.ets5projectfile");
+		String gaFile = System.getProperty(PropertyNames.KNX2MQTT_KNX_ETS5PROJECTFILE);
 		if(gaFile==null)
-			gaFile=System.getProperty("knx2mqtt.knx.ets4projectfile");
+			gaFile=System.getProperty(PropertyNames.KNX2MQTT_KNX_ETS4PROJECTFILE);
 		if(gaFile == null)
 		{
 			L.config("No ETS4/ETS5 project file specified");
