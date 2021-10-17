@@ -1,15 +1,10 @@
 package com.tellerulam.knx2mqtt;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -30,13 +25,6 @@ import org.xml.sax.Attributes;
 import org.xml.sax.SAXException;
 import org.xml.sax.helpers.DefaultHandler;
 
-import com.tellerulam.knx2mqtt.model.Cache;
-import com.tellerulam.knx2mqtt.model.GAInfo;
-
-import de.haumacher.msgbuf.json.JsonReader;
-import de.haumacher.msgbuf.json.JsonWriter;
-import de.haumacher.msgbuf.server.io.ReaderAdapter;
-import de.haumacher.msgbuf.server.io.WriterAdapter;
 import tuwien.auto.calimero.GroupAddress;
 import tuwien.auto.calimero.exception.KNXException;
 
@@ -45,7 +33,7 @@ import tuwien.auto.calimero.exception.KNXException;
  */
 public class EtsLoader {
 
-	private static final Logger L = Logger.getLogger(EtsLoader.class.getName());
+	static final Logger L = Logger.getLogger(EtsLoader.class.getName());
 
 	private final GroupAddressManager _addressManager;
 
@@ -84,22 +72,9 @@ public class EtsLoader {
 		if (cacheFile.exists()) {
 			if (cacheFile.lastModified() > projectFile.lastModified()) {
 				try {
-					Cache cache;
-					try (JsonReader json = new JsonReader(
-							new ReaderAdapter(new InputStreamReader(new FileInputStream(cacheFile), "utf-8")))) {
-						cache = Cache.readCache(json);
-					}
+					_addressManager.readFromFile(cacheFile);
 
-					for (Entry<String, GAInfo> entry : cache.getAddresses().entrySet()) {
-						GAInfo info = entry.getValue();
-						GroupAddressInfo gai = new GroupAddressInfo(info.getName(), entry.getKey());
-						gai.setDpt(info.getDpt());
-						gai.createTranslator();
-
-						_addressManager.add(gai);
-					}
-
-					L.config("Read group address table from " + cacheFile + ".");
+					EtsLoader.L.config("Read group address table from " + cacheFile + ".");
 					return;
 				} catch (Exception e) {
 					L.log(Level.WARNING, "Error reading cache file " + cacheFile + ", ignoring it", e);
@@ -132,21 +107,15 @@ public class EtsLoader {
 			System.exit(1);
 		}
 
-		Cache cache = Cache.create();
-		for (GroupAddressInfo info : _addressManager.addresses()) {
-			cache.putAddresse(info.getAddress(), GAInfo.create().setName(info.getName()).setDpt(info.getDpt()));
-		}
-		try (JsonWriter json = new JsonWriter(
-				new WriterAdapter(new OutputStreamWriter(new FileOutputStream(cacheFile), "utf-8")))) {
-			json.setIndent("\t");
-			cache.writeContent(json);
+		try {
+			_addressManager.storeToFile(cacheFile);
 		} catch (Exception e) {
 			L.log(Level.INFO, "Unable to write project cache file " + cacheFile
 					+ ". This does not impair functionality, but subsequent startups will not be faster", e);
 		}
 	}
 
-	/*
+	/**
 	 * First step in parsing: find the GroupAddresses and their IDs
 	 */
 	private void processETS4ProjectFile(ZipFile zf, ZipEntry zep)
