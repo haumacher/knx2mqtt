@@ -1,21 +1,28 @@
 package com.tellerulam.knx2mqtt;
 
-import java.nio.charset.*;
-import java.util.*;
-import java.util.logging.*;
+import java.nio.charset.StandardCharsets;
+import java.util.TimerTask;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
-import org.eclipse.paho.client.mqttv3.*;
-import org.eclipse.paho.client.mqttv3.persist.*;
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
+import org.eclipse.paho.client.mqttv3.MqttCallback;
+import org.eclipse.paho.client.mqttv3.MqttClient;
+import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
+import org.eclipse.paho.client.mqttv3.MqttException;
+import org.eclipse.paho.client.mqttv3.MqttMessage;
+import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 
-import com.eclipsesource.json.*;
+import com.eclipsesource.json.JsonObject;
 import com.tellerulam.knx2mqtt.GroupAddressManager.GroupAddressInfo;
 
 public class MQTTHandler {
 	private final Logger L = Logger.getLogger(getClass().getName());
 
-	public static void init() throws MqttException {
-		instance = new MQTTHandler();
-		instance.doInit();
+	public static MQTTHandler create() throws MqttException {
+		MQTTHandler result = new MQTTHandler();
+		result.doInit();
+		return result;
 	}
 
 	private final String topicPrefix;
@@ -26,8 +33,6 @@ public class MQTTHandler {
 			tp += "/";
 		topicPrefix = tp;
 	}
-
-	private static MQTTHandler instance;
 
 	private MqttClient mqttc;
 
@@ -53,7 +58,7 @@ public class MQTTHandler {
 
 	private boolean shouldBeConnected;
 
-	private static boolean knxConnectionState;
+	private boolean _connected;
 
 	private void processSetGet(String namePart, MqttMessage msg, boolean set) {
 		if (msg.isRetained()) {
@@ -139,7 +144,7 @@ public class MQTTHandler {
 		Main.t.schedule(new StateChecker(), 30 * 1000, 30 * 1000);
 	}
 
-	private void doPublish(String name, Object val, String src, String dpt, String textual, long updateTime,
+	public void doPublish(String name, Object val, String src, String dpt, String textual, long updateTime,
 			long lastChange) {
 		JsonObject jso = new JsonObject();
 		jso.add("ts", updateTime).add("lc", lastChange).add("knx_src_addr", src).add("knx_dpt", dpt);
@@ -166,7 +171,7 @@ public class MQTTHandler {
 
 	private void sendConnectionState() {
 		try {
-			instance.mqttc.publish(instance.topicPrefix + "connected", (knxConnectionState ? "2" : "1").getBytes(), 1,
+			mqttc.publish(topicPrefix + "connected", (_connected ? "2" : "1").getBytes(), 1,
 					true);
 		} catch (MqttException e) {
 			/* Ignore */
@@ -174,14 +179,9 @@ public class MQTTHandler {
 
 	}
 
-	public static void setKNXConnectionState(boolean connected) {
-		knxConnectionState = connected;
-		instance.sendConnectionState();
-	}
-
-	public static void publish(String name, Object val, String src, String dpt, String textual, long updateTime,
-			long lastChange) {
-		instance.doPublish(name, val, src, dpt, textual, updateTime, lastChange);
+	public void doSetKNXConnectionState(boolean connected) {
+		_connected = connected;
+		sendConnectionState();
 	}
 
 }

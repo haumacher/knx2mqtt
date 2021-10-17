@@ -1,13 +1,16 @@
 package com.tellerulam.knx2mqtt;
 
-import java.io.*;
-import java.nio.charset.*;
-import java.nio.file.*;
-import java.util.*;
-import java.util.logging.*;
-import java.util.regex.*;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.List;
+import java.util.Timer;
+import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import org.eclipse.paho.client.mqttv3.*;
+import org.eclipse.paho.client.mqttv3.MqttException;
 
 public class Main {
 	static final Timer t = new Timer(true);
@@ -50,7 +53,7 @@ public class Main {
 		SyslogHandler.readConfig();
 		GroupAddressManager.loadETS4Project();
 		GroupAddressManager.loadGroupAddressTable();
-		MQTTHandler.init();
-		KNXConnector.launch();
+		MQTTHandler mqtt = MQTTHandler.create();
+		KNXConnector.launch(mqtt);
 	}
 }

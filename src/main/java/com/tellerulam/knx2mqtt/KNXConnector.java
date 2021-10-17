@@ -1,24 +1,50 @@
 package com.tellerulam.knx2mqtt;
 
-import java.net.*;
-import java.util.logging.*;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import com.tellerulam.knx2mqtt.GroupAddressManager.GroupAddressInfo;
 
-import tuwien.auto.calimero.*;
-import tuwien.auto.calimero.dptxlator.*;
-import tuwien.auto.calimero.exception.*;
-import tuwien.auto.calimero.knxnetip.*;
-import tuwien.auto.calimero.link.*;
-import tuwien.auto.calimero.link.medium.*;
-import tuwien.auto.calimero.process.*;
+import tuwien.auto.calimero.CloseEvent;
+import tuwien.auto.calimero.DataUnitBuilder;
+import tuwien.auto.calimero.DetachEvent;
+import tuwien.auto.calimero.FrameEvent;
+import tuwien.auto.calimero.GroupAddress;
+import tuwien.auto.calimero.IndividualAddress;
+import tuwien.auto.calimero.Priority;
+import tuwien.auto.calimero.dptxlator.DPTXlator;
+import tuwien.auto.calimero.dptxlator.DPTXlatorBoolean;
+import tuwien.auto.calimero.exception.KNXException;
+import tuwien.auto.calimero.exception.KNXIllegalArgumentException;
+import tuwien.auto.calimero.knxnetip.KNXnetIPConnection;
+import tuwien.auto.calimero.link.KNXNetworkLink;
+import tuwien.auto.calimero.link.KNXNetworkLinkIP;
+import tuwien.auto.calimero.link.NetworkLinkListener;
+import tuwien.auto.calimero.link.medium.TPSettings;
+import tuwien.auto.calimero.process.ProcessCommunicationBase;
+import tuwien.auto.calimero.process.ProcessCommunicator;
+import tuwien.auto.calimero.process.ProcessCommunicatorImpl;
+import tuwien.auto.calimero.process.ProcessEvent;
+import tuwien.auto.calimero.process.ProcessListener;
+import tuwien.auto.calimero.process.ProcessListenerEx;
 
 public class KNXConnector extends Thread implements NetworkLinkListener {
 	private final Logger L = Logger.getLogger(getClass().getName());
 
+	private final MQTTHandler _mqtt;
+
 	private KNXNetworkLink link;
 
 	private ProcessCommunicator pc;
+
+	private KNXConnector(MQTTHandler mqtt) {
+		super("KNX Connection Thread");
+
+		_mqtt = mqtt;
+	}
 
 	public void connect() throws KNXException, InterruptedException {
 		int knxConnectionType = KNXNetworkLinkIP.TUNNELING;
@@ -37,7 +63,7 @@ public class KNXConnector extends Thread implements NetworkLinkListener {
 		if (knxConnectionType != -1)
 			connectIP(knxConnectionType);
 
-		MQTTHandler.setKNXConnectionState(true);
+		_mqtt.doSetKNXConnectionState(true);
 
 		link.addLinkListener(this);
 		pc = new ProcessCommunicatorImpl(link);
@@ -80,7 +106,7 @@ public class KNXConnector extends Thread implements NetworkLinkListener {
 	@Override
 	public void linkClosed(CloseEvent ce) {
 		L.info("Link closed: " + ce.getReason());
-		MQTTHandler.setKNXConnectionState(false);
+		_mqtt.doSetKNXConnectionState(false);
 	}
 
 	@Override
@@ -119,10 +145,10 @@ public class KNXConnector extends Thread implements NetworkLinkListener {
 					}
 					L.info("Got " + val + " to unknown " + dest + " from " + src + " (ASDU length " + asdu.length
 							+ ")");
-					MQTTHandler.publish(dest.toString(), val, src.toString(), dpt, null, now, now);
+					_mqtt.doPublish(dest.toString(), val, src.toString(), dpt, null, now, now);
 				} else {
-					MQTTHandler.publish(gaInfo.name, gaInfo.translateAndStoreValue(asdu, now), src.toString(),
-							gaInfo.dpt, gaInfo.getTextutal(), now, gaInfo.lastValueTimestamp);
+					_mqtt.doPublish(gaInfo.name, gaInfo.translateAndStoreValue(asdu, now), src.toString(), gaInfo.dpt,
+							gaInfo.getTextutal(), now, gaInfo.lastValueTimestamp);
 				}
 			} catch (KNXException e) {
 				L.log(Level.WARNING, "Error converting ASDU to " + dest + " from " + src);
@@ -173,14 +199,10 @@ public class KNXConnector extends Thread implements NetworkLinkListener {
 		}
 	}
 
-	private KNXConnector() {
-		super("KNX Connection Thread");
-	}
-
 	private static KNXConnector conn;
 
-	public static void launch() {
-		conn = new KNXConnector();
+	public static void launch(MQTTHandler mqtt) {
+		conn = new KNXConnector(mqtt);
 		conn.start();
 	}
 
