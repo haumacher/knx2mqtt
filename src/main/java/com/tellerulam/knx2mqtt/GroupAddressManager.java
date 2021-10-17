@@ -26,7 +26,6 @@ import javax.xml.parsers.SAXParserFactory;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
-import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.Attributes;
 import org.xml.sax.SAXException;
@@ -61,46 +60,6 @@ public class GroupAddressManager {
 
 	public GroupAddressInfo getGAInfoForName(String name) {
 		return gaByName.get(name);
-	}
-
-	/**
-	 * Load an ETS4 Group Address Export
-	 */
-	void loadGroupAddressTable() {
-		String gaFile = System.getProperty(PropertyNames.KNX2MQTT_KNX_GROUPADDRESSTABLE);
-		if (gaFile == null) {
-			L.config("No Group Address table specified");
-			return;
-		}
-
-		try {
-			DocumentBuilderFactory docBuilderFactory = DocumentBuilderFactory.newInstance();
-			DocumentBuilder docBuilder = docBuilderFactory.newDocumentBuilder();
-			Document doc = docBuilder.parse(new File(gaFile));
-			NodeList root = doc.getElementsByTagName("GroupAddress-Export");
-			iterateGAElement(root.item(0), "");
-			L.info("Read " + gaTable.size() + " Group Address entries from " + gaFile);
-		} catch (Exception e) {
-			L.log(Level.SEVERE, "Unable to parse Group Address table file " + gaFile, e);
-			System.exit(1);
-		}
-	}
-
-	private void iterateGAElement(Node n, String prefix) {
-		NodeList nlist = n.getChildNodes();
-		for (int ix = 0; ix < nlist.getLength(); ix++) {
-			Node sn = nlist.item(ix);
-			if ("GroupRange".equals(sn.getNodeName())) {
-				String name = ((Element) sn).getAttribute("Name");
-				iterateGAElement(sn, prefix + name + "/");
-			} else if ("GroupAddress".equals(sn.getNodeName())) {
-				String name = prefix + ((Element) sn).getAttribute("Name");
-				String addr = ((Element) sn).getAttribute("Address");
-				GroupAddressInfo gai = new GroupAddressInfo(name, addr);
-				gaTable.put(addr, gai);
-				gaByName.put(name, gai);
-			}
-		}
 	}
 
 	/**
@@ -436,5 +395,20 @@ public class GroupAddressManager {
 			return dptMap.get(bits);
 		}
 		return "DPST-" + dpitid;
+	}
+
+	/**
+	 * Number of group address assignments.
+	 */
+	public int size() {
+		return gaTable.size();
+	}
+
+	/**
+	 * Adds a new {@link GroupAddressInfo}.
+	 */
+	public void add(GroupAddressInfo gai) {
+		gaTable.put(gai.getAddress(), gai);
+		gaByName.put(gai.getName(), gai);
 	}
 }

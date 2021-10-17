@@ -53,7 +53,7 @@ public class Main {
 		SyslogHandler.readConfig();
 		GroupAddressManager addressManager = new GroupAddressManager();
 		addressManager.loadETS4Project();
-		addressManager.loadGroupAddressTable();
+		new AddressTableLoader(addressManager).load();
 		MQTTHandler mqtt = MQTTHandler.create(addressManager);
 		KNXConnector.launch(addressManager, mqtt);
 	}
