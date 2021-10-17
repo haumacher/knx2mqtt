@@ -44,22 +44,29 @@ import tuwien.auto.calimero.GroupAddress;
 public class GroupAddressManager {
 	private static final Logger L = Logger.getLogger(GroupAddressManager.class.getName());
 
-	public static GroupAddressInfo getGAInfoForAddress(String address) {
+	private Map<String, GroupAddressInfo> gaTable = new HashMap<>();
+
+	private Map<String, GroupAddressInfo> gaByName = new HashMap<>();
+
+	/**
+	 * Creates a {@link GroupAddressManager}.
+	 */
+	public GroupAddressManager() {
+		super();
+	}
+
+	public GroupAddressInfo getGAInfoForAddress(String address) {
 		return gaTable.get(address);
 	}
 
-	public static GroupAddressInfo getGAInfoForName(String name) {
+	public GroupAddressInfo getGAInfoForName(String name) {
 		return gaByName.get(name);
 	}
-
-	static private Map<String, GroupAddressInfo> gaTable = new HashMap<>();
-
-	static private Map<String, GroupAddressInfo> gaByName = new HashMap<>();
 
 	/**
 	 * Load an ETS4 Group Address Export
 	 */
-	static void loadGroupAddressTable() {
+	void loadGroupAddressTable() {
 		String gaFile = System.getProperty(PropertyNames.KNX2MQTT_KNX_GROUPADDRESSTABLE);
 		if (gaFile == null) {
 			L.config("No Group Address table specified");
@@ -79,7 +86,7 @@ public class GroupAddressManager {
 		}
 	}
 
-	private static void iterateGAElement(Node n, String prefix) {
+	private void iterateGAElement(Node n, String prefix) {
 		NodeList nlist = n.getChildNodes();
 		for (int ix = 0; ix < nlist.getLength(); ix++) {
 			Node sn = nlist.item(ix);
@@ -99,8 +106,7 @@ public class GroupAddressManager {
 	/**
 	 * Load an ETS4 or ETS5 project file
 	 */
-	@SuppressWarnings("unchecked")
-	static void loadETS4Project() {
+	void loadETS4Project() {
 		String gaFile = System.getProperty(PropertyNames.KNX2MQTT_KNX_ETS5PROJECTFILE);
 		if (gaFile == null)
 			gaFile = System.getProperty(PropertyNames.KNX2MQTT_KNX_ETS4PROJECTFILE);
@@ -186,7 +192,7 @@ public class GroupAddressManager {
 		System.gc();
 	}
 
-	private static void storeGAInfo(String address, String name, String datapointType) {
+	private void storeGAInfo(String address, String name, String datapointType) {
 		String ga = new GroupAddress(Integer.parseInt(address)).toString();
 
 		GroupAddressInfo gai = gaTable.get(ga);
@@ -217,7 +223,7 @@ public class GroupAddressManager {
 	/*
 	 * First step in parsing: find the GroupAddresses and their IDs
 	 */
-	private static void processETS4ProjectFile(ZipFile zf, ZipEntry zep)
+	private void processETS4ProjectFile(ZipFile zf, ZipEntry zep)
 			throws ParserConfigurationException, SAXException, IOException {
 		DocumentBuilderFactory docBuilderFactory = DocumentBuilderFactory.newInstance();
 		docBuilderFactory.setCoalescing(true);
@@ -260,7 +266,7 @@ public class GroupAddressManager {
 	/*
 	 * Find out what is connected to this group address
 	 */
-	private static void processETS4GroupAddressConnections(ZipFile zf, Document doc, NodeList sendConnections,
+	private void processETS4GroupAddressConnections(ZipFile zf, Document doc, NodeList sendConnections,
 			NodeList receiveConnections, String id, String address, String name)
 			throws SAXException, IOException, ParserConfigurationException {
 		boolean foundConnection = false;
@@ -303,13 +309,13 @@ public class GroupAddressManager {
 					"Unable to determine datapoint type for " + id + "/" + address + "/" + name);
 	}
 
-	private static Map<String, Map<String, Map<String, String>>> deviceDescriptionCache;
+	private Map<String, Map<String, Map<String, String>>> deviceDescriptionCache;
 
-	private static Map<Integer, String> dptMap;
+	private Map<Integer, String> dptMap;
 
-	private static SAXParserFactory saxFactory;
+	private SAXParserFactory saxFactory;
 
-	private static Map<String, Map<String, String>> loadDeviceDescription(ZipFile zf, String filename)
+	private Map<String, Map<String, String>> loadDeviceDescription(ZipFile zf, String filename)
 			throws ParserConfigurationException, SAXException, IOException {
 		if (deviceDescriptionCache == null) {
 			saxFactory = SAXParserFactory.newInstance();
@@ -342,7 +348,7 @@ public class GroupAddressManager {
 		return attrById;
 	}
 
-	private static boolean processETS4GroupConnection(ZipFile zf, String refId, String id, String address, String name,
+	private boolean processETS4GroupConnection(ZipFile zf, String refId, String id, String address, String name,
 			boolean useObjectSize) throws SAXException, IOException, ParserConfigurationException {
 		// Right, we need to look into the device description. Determine it's
 		// filename
@@ -367,7 +373,7 @@ public class GroupAddressManager {
 		return false;
 	}
 
-	private static boolean processETS4ComObj(Map<String, String> cobj, ZipFile zf, String address, String name,
+	private boolean processETS4ComObj(Map<String, String> cobj, ZipFile zf, String address, String name,
 			boolean useObjectSize) throws SAXException, IOException, ParserConfigurationException {
 		String dpt = cobj.get("DatapointType");
 		if (dpt != null && dpt.length() != 0) {
@@ -390,7 +396,7 @@ public class GroupAddressManager {
 	}
 
 	@SuppressWarnings("boxing")
-	private static String inferDPTFromObjectSize(ZipFile zf, String objSize)
+	private String inferDPTFromObjectSize(ZipFile zf, String objSize)
 			throws SAXException, IOException, ParserConfigurationException {
 		// Take a guess based on size
 		String dpitid = null;

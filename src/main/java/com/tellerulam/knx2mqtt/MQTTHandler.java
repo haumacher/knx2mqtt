@@ -18,15 +18,18 @@ import com.eclipsesource.json.JsonObject;
 public class MQTTHandler {
 	private final Logger L = Logger.getLogger(getClass().getName());
 
-	public static MQTTHandler create() throws MqttException {
-		MQTTHandler result = new MQTTHandler();
+	public static MQTTHandler create(GroupAddressManager addressManager) throws MqttException {
+		MQTTHandler result = new MQTTHandler(addressManager);
 		result.doInit();
 		return result;
 	}
 
+	private final GroupAddressManager _addressManager;
+
 	private final String topicPrefix;
 
-	private MQTTHandler() {
+	private MQTTHandler(GroupAddressManager addressManager) {
+		_addressManager = addressManager;
 		String tp = System.getProperty(PropertyNames.KNX2MQTT_MQTT_TOPIC, "knx");
 		if (!tp.endsWith("/"))
 			tp += "/";
@@ -65,7 +68,7 @@ public class MQTTHandler {
 			return;
 		}
 		// Now translate the topic into a group address
-		GroupAddressInfo gai = GroupAddressManager.getGAInfoForName(namePart);
+		GroupAddressInfo gai = _addressManager.getGAInfoForName(namePart);
 		if (gai == null) {
 			L.warning("Unable to translate name " + namePart + " into a group address, ignoring message " + msg);
 			return;

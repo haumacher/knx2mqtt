@@ -38,9 +38,11 @@ public class KNXConnector extends Thread implements NetworkLinkListener {
 
 	private ProcessCommunicator pc;
 
-	private KNXConnector(MQTTHandler mqtt) {
-		super("KNX Connection Thread");
+	private final ProcessListener processListener;
 
+	private KNXConnector(GroupAddressManager addressManager, MQTTHandler mqtt) {
+		super("KNX Connection Thread");
+		processListener = new MyProcessListener(addressManager);
 		_mqtt = mqtt;
 	}
 
@@ -113,6 +115,16 @@ public class KNXConnector extends Thread implements NetworkLinkListener {
 	}
 
 	private class MyProcessListener extends ProcessListenerEx {
+
+		private final GroupAddressManager _addressManager;
+
+		/**
+		 * Creates a {@link MyProcessListener}.
+		 */
+		public MyProcessListener(GroupAddressManager addressManager) {
+			_addressManager = addressManager;
+		}
+
 		@Override
 		public void groupWrite(ProcessEvent pe) {
 			GroupAddress dest = pe.getDestination();
@@ -123,7 +135,7 @@ public class KNXConnector extends Thread implements NetworkLinkListener {
 				return;
 			}
 
-			GroupAddressInfo gaInfo = GroupAddressManager.getGAInfoForAddress(dest.toString());
+			GroupAddressInfo gaInfo = _addressManager.getGAInfoForAddress(dest.toString());
 
 			long now = System.currentTimeMillis();
 
@@ -172,8 +184,6 @@ public class KNXConnector extends Thread implements NetworkLinkListener {
 
 	}
 
-	ProcessListener processListener = new MyProcessListener();
-
 	@Override
 	public void run() {
 		for (;;) {
@@ -199,8 +209,8 @@ public class KNXConnector extends Thread implements NetworkLinkListener {
 
 	private static KNXConnector conn;
 
-	public static void launch(MQTTHandler mqtt) {
-		conn = new KNXConnector(mqtt);
+	public static void launch(GroupAddressManager addressManager, MQTTHandler mqtt) {
+		conn = new KNXConnector(addressManager, mqtt);
 		conn.start();
 	}
 

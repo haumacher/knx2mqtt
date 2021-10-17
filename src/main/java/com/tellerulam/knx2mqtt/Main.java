@@ -51,9 +51,10 @@ public class Main {
 		Logger.getLogger(Main.class.getName())
 				.info("knx2mqtt V" + getVersion() + " (C) 2015 Oliver Wagner <owagner@tellerulam.com>");
 		SyslogHandler.readConfig();
-		GroupAddressManager.loadETS4Project();
-		GroupAddressManager.loadGroupAddressTable();
-		MQTTHandler mqtt = MQTTHandler.create();
-		KNXConnector.launch(mqtt);
+		GroupAddressManager addressManager = new GroupAddressManager();
+		addressManager.loadETS4Project();
+		addressManager.loadGroupAddressTable();
+		MQTTHandler mqtt = MQTTHandler.create(addressManager);
+		KNXConnector.launch(addressManager, mqtt);
 	}
 }
