@@ -36,10 +36,8 @@ public class Main {
 	}
 
 	public static void main(String[] args) throws MqttException, SecurityException, IOException {
-		/*
-		 * Interpret all command line arguments as property definitions (without the knx2mqtt
-		 * prefix)
-		 */
+		// Interpret all command line arguments as property definitions (without the knx2mqtt
+		// prefix)
 		for (String s : args) {
 			String sp[] = s.split("=", 2);
 			if (sp.length != 2) {
@@ -52,7 +50,7 @@ public class Main {
 				.info("knx2mqtt V" + getVersion() + " (C) 2015 Oliver Wagner <owagner@tellerulam.com>");
 		SyslogHandler.readConfig();
 		GroupAddressManager addressManager = new GroupAddressManager();
-		addressManager.loadETS4Project();
+		new EtsLoader(addressManager).loadETS4Project();
 		new AddressTableLoader(addressManager).load();
 		MQTTHandler mqtt = MQTTHandler.create(addressManager);
 		KNXConnector.launch(addressManager, mqtt);
