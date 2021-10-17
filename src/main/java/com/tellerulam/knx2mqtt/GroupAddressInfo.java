@@ -1,6 +1,3 @@
-/*
- * Copyright (c) 2021 Bernhard Haumacher et al. All Rights Reserved.
- */
 package com.tellerulam.knx2mqtt;
 
 import java.io.Serializable;

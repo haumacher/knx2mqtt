@@ -1,4 +1,3 @@
-
 package com.tellerulam.knx2mqtt;
 
 import java.util.Collection;
