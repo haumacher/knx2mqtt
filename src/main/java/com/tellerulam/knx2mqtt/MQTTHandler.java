@@ -14,7 +14,6 @@ import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 
 import com.eclipsesource.json.JsonObject;
-import com.tellerulam.knx2mqtt.GroupAddressManager.GroupAddressInfo;
 
 public class MQTTHandler {
 	private final Logger L = Logger.getLogger(getClass().getName());
