@@ -28,22 +28,16 @@ public class AddressTableLoader {
 	/**
 	 * Loads an external address table.
 	 */
-	public void load() {
-		String gaFile = System.getProperty(PropertyNames.KNX2MQTT_KNX_GROUPADDRESSTABLE);
-		if (gaFile == null) {
-			L.config("No Group Address table specified");
-			return;
-		}
-
+	public void load(String fileName) {
 		try {
 			DocumentBuilderFactory docBuilderFactory = DocumentBuilderFactory.newInstance();
 			DocumentBuilder docBuilder = docBuilderFactory.newDocumentBuilder();
-			Document doc = docBuilder.parse(new File(gaFile));
+			Document doc = docBuilder.parse(new File(fileName));
 			NodeList root = doc.getElementsByTagName("GroupAddress-Export");
 			iterateGAElement(root.item(0), "");
-			L.info("Read " + _addressManager.size() + " Group Address entries from " + gaFile);
+			L.info("Read " + _addressManager.size() + " Group Address entries from " + fileName);
 		} catch (Exception e) {
-			L.log(Level.SEVERE, "Unable to parse Group Address table file " + gaFile, e);
+			L.log(Level.SEVERE, "Unable to parse Group Address table file " + fileName, e);
 			System.exit(1);
 		}
 	}

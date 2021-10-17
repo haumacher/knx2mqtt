@@ -13,6 +13,8 @@ import java.util.regex.Pattern;
 import org.eclipse.paho.client.mqttv3.MqttException;
 
 public class Main {
+	static final Logger L = Logger.getLogger(Main.class.getName());
+
 	static final Timer t = new Timer(true);
 
 	private static String getVersion() {
@@ -50,9 +52,39 @@ public class Main {
 				.info("knx2mqtt V" + getVersion() + " (C) 2015 Oliver Wagner <owagner@tellerulam.com>");
 		SyslogHandler.readConfig();
 		GroupAddressManager addressManager = new GroupAddressManager();
-		new EtsLoader(addressManager).loadETS4Project();
-		new AddressTableLoader(addressManager).load();
+		loadEtsProject(addressManager);
+		loadAddressTable(addressManager);
 		MQTTHandler mqtt = MQTTHandler.create(addressManager);
 		KNXConnector.launch(addressManager, mqtt);
+	}
+
+	private static void loadAddressTable(GroupAddressManager addressManager) {
+		String fileName = getAddressTableFileName();
+		if (fileName == null) {
+			L.config("No Group Address table specified");
+		} else {
+			new AddressTableLoader(addressManager).load(fileName);
+		}
+	}
+
+	private static String getAddressTableFileName() {
+		return System.getProperty(PropertyNames.KNX2MQTT_KNX_GROUPADDRESSTABLE);
+	}
+
+	private static void loadEtsProject(GroupAddressManager addressManager) {
+		String fileName = getEtsProjectFileName();
+		if (fileName == null) {
+			L.config("No ETS4/ETS5 project file specified");
+		} else {
+			new EtsLoader(addressManager).load(fileName);
+		}
+	}
+
+	private static String getEtsProjectFileName() {
+		String fileName = System.getProperty(PropertyNames.KNX2MQTT_KNX_ETS5PROJECTFILE);
+		if (fileName == null) {
+			fileName = System.getProperty(PropertyNames.KNX2MQTT_KNX_ETS4PROJECTFILE);
+		}
+		return fileName;
 	}
 }

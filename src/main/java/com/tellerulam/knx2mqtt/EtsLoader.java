@@ -55,20 +55,13 @@ public class EtsLoader {
 	/**
 	 * Load an ETS4 or ETS5 project file
 	 */
-	void loadETS4Project() {
-		String gaFile = System.getProperty(PropertyNames.KNX2MQTT_KNX_ETS5PROJECTFILE);
-		if (gaFile == null)
-			gaFile = System.getProperty(PropertyNames.KNX2MQTT_KNX_ETS4PROJECTFILE);
-		if (gaFile == null) {
-			L.config("No ETS4/ETS5 project file specified");
-			return;
-		}
-		File projectFile = new File(gaFile);
+	public void load(String fileName) {
+		File projectFile = new File(fileName);
 		if (!projectFile.exists()) {
-			L.severe("ETS4/ETS5 project file " + gaFile + " does not exit");
+			L.severe("ETS4/ETS5 project file " + fileName + " does not exit");
 			System.exit(1);
 		}
-		File cacheFile = new File(gaFile + ".json");
+		File cacheFile = new File(fileName + ".json");
 		if (cacheFile.exists()) {
 			if (cacheFile.lastModified() > projectFile.lastModified()) {
 				try {
@@ -83,8 +76,23 @@ public class EtsLoader {
 				L.info("Cache file " + cacheFile + " exists, but project file is newer, ignoring it");
 			}
 		}
+
+		loadProjectFile(projectFile);
+
+		try {
+			_addressManager.storeToFile(cacheFile);
+		} catch (Exception e) {
+			L.log(Level.INFO, "Unable to write project cache file " + cacheFile
+					+ ". This does not impair functionality, but subsequent startups will not be faster", e);
+		}
+	}
+
+	/**
+	 * Loads the group address information from the given ETS project file.
+	 */
+	private void loadProjectFile(File projectFile) {
 		long startTime = System.currentTimeMillis();
-		try (ZipFile zf = new ZipFile(gaFile)) {
+		try (ZipFile zf = new ZipFile(projectFile)) {
 			// Find the project file
 			Enumeration<? extends ZipEntry> entries = zf.entries();
 			while (entries.hasMoreElements()) {
@@ -103,15 +111,8 @@ public class EtsLoader {
 			long totalTime = System.currentTimeMillis() - startTime;
 			L.config("Reading group address table took " + totalTime + "ms");
 		} catch (Exception e) {
-			L.log(Level.SEVERE, "Error reading project file " + gaFile, e);
+			L.log(Level.SEVERE, "Error reading project file " + projectFile, e);
 			System.exit(1);
-		}
-
-		try {
-			_addressManager.storeToFile(cacheFile);
-		} catch (Exception e) {
-			L.log(Level.INFO, "Unable to write project cache file " + cacheFile
-					+ ". This does not impair functionality, but subsequent startups will not be faster", e);
 		}
 	}
 
