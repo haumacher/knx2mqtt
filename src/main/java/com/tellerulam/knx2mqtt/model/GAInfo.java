@@ -15,24 +15,16 @@ public class GAInfo extends de.haumacher.msgbuf.data.AbstractReflectiveDataObjec
 	/** @see #getName() */
 	public static final String NAME = "name";
 
-	/** @see #getAddress() */
-	public static final String ADDRESS = "address";
-
 	/** @see #getDpt() */
 	public static final String DPT = "dpt";
 
 	/** Identifier for the property {@link #getName()} in binary format. */
 	public static final int NAME__ID = 1;
 
-	/** Identifier for the property {@link #getAddress()} in binary format. */
-	public static final int ADDRESS__ID = 2;
-
 	/** Identifier for the property {@link #getDpt()} in binary format. */
-	public static final int DPT__ID = 3;
+	public static final int DPT__ID = 2;
 
 	private String _name = "";
-
-	private String _address = "";
 
 	private String _dpt = "";
 
@@ -57,18 +49,6 @@ public class GAInfo extends de.haumacher.msgbuf.data.AbstractReflectiveDataObjec
 		return this;
 	}
 
-	public final String getAddress() {
-		return _address;
-	}
-
-	/**
-	 * @see #getAddress()
-	 */
-	public final GAInfo setAddress(String value) {
-		_address = value;
-		return this;
-	}
-
 	public final String getDpt() {
 		return _dpt;
 	}
@@ -84,7 +64,6 @@ public class GAInfo extends de.haumacher.msgbuf.data.AbstractReflectiveDataObjec
 	private static java.util.List<String> PROPERTIES = java.util.Collections.unmodifiableList(
 		java.util.Arrays.asList(
 			NAME, 
-			ADDRESS, 
 			DPT));
 
 	@Override
@@ -96,7 +75,6 @@ public class GAInfo extends de.haumacher.msgbuf.data.AbstractReflectiveDataObjec
 	public Object get(String field) {
 		switch (field) {
 			case NAME: return getName();
-			case ADDRESS: return getAddress();
 			case DPT: return getDpt();
 			default: return super.get(field);
 		}
@@ -106,7 +84,6 @@ public class GAInfo extends de.haumacher.msgbuf.data.AbstractReflectiveDataObjec
 	public void set(String field, Object value) {
 		switch (field) {
 			case NAME: setName((String) value); break;
-			case ADDRESS: setAddress((String) value); break;
 			case DPT: setDpt((String) value); break;
 		}
 	}
@@ -130,8 +107,6 @@ public class GAInfo extends de.haumacher.msgbuf.data.AbstractReflectiveDataObjec
 		super.writeFields(out);
 		out.name(NAME);
 		out.value(getName());
-		out.name(ADDRESS);
-		out.value(getAddress());
 		out.name(DPT);
 		out.value(getDpt());
 	}
@@ -140,7 +115,6 @@ public class GAInfo extends de.haumacher.msgbuf.data.AbstractReflectiveDataObjec
 	protected void readField(de.haumacher.msgbuf.json.JsonReader in, String field) throws java.io.IOException {
 		switch (field) {
 			case NAME: setName(de.haumacher.msgbuf.json.JsonUtil.nextStringOptional(in)); break;
-			case ADDRESS: setAddress(de.haumacher.msgbuf.json.JsonUtil.nextStringOptional(in)); break;
 			case DPT: setDpt(de.haumacher.msgbuf.json.JsonUtil.nextStringOptional(in)); break;
 			default: super.readField(in, field);
 		}
@@ -163,8 +137,6 @@ public class GAInfo extends de.haumacher.msgbuf.data.AbstractReflectiveDataObjec
 	protected void writeFields(de.haumacher.msgbuf.binary.DataWriter out) throws java.io.IOException {
 		out.name(NAME__ID);
 		out.value(getName());
-		out.name(ADDRESS__ID);
-		out.value(getAddress());
 		out.name(DPT__ID);
 		out.value(getDpt());
 	}
@@ -185,7 +157,6 @@ public class GAInfo extends de.haumacher.msgbuf.data.AbstractReflectiveDataObjec
 	protected void readField(de.haumacher.msgbuf.binary.DataReader in, int field) throws java.io.IOException {
 		switch (field) {
 			case NAME__ID: setName(in.nextString()); break;
-			case ADDRESS__ID: setAddress(in.nextString()); break;
 			case DPT__ID: setDpt(in.nextString()); break;
 			default: in.skipValue(); 
 		}

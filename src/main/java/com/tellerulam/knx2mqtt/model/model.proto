@@ -1,11 +1,10 @@
 package com.tellerulam.knx2mqtt.model;
 
 message Cache {
-	repeated GAInfo infos;
+	map<string, GAInfo> addresses;
 }
 
 message GAInfo {
 	string name;
-	string address;
 	string dpt;
 }

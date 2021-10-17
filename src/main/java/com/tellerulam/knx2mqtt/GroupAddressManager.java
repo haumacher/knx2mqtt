@@ -10,6 +10,7 @@ import java.io.OutputStreamWriter;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -122,8 +123,9 @@ public class GroupAddressManager {
 						cache = Cache.readCache(json);
 					}
 
-					for (GAInfo info : cache.getInfos()) {
-						GroupAddressInfo gai = new GroupAddressInfo(info.getName(), info.getAddress());
+					for (Entry<String, GAInfo> entry : cache.getAddresses().entrySet()) {
+						GAInfo info = entry.getValue();
+						GroupAddressInfo gai = new GroupAddressInfo(info.getName(), entry.getKey());
 						gai.setDpt(info.getDpt());
 						gai.createTranslator();
 
@@ -168,10 +170,11 @@ public class GroupAddressManager {
 
 		Cache cache = Cache.create();
 		for (GroupAddressInfo info : gaTable.values()) {
-			cache.addInfo(GAInfo.create().setAddress(info.getAddress()).setName(info.getName()).setDpt(info.getDpt()));
+			cache.putAddresse(info.getAddress(), GAInfo.create().setName(info.getName()).setDpt(info.getDpt()));
 		}
 		try (JsonWriter json = new JsonWriter(
 				new WriterAdapter(new OutputStreamWriter(new FileOutputStream(cacheFile), "utf-8")))) {
+			json.setIndent("\t");
 			cache.writeContent(json);
 		} catch (Exception e) {
 			L.log(Level.INFO, "Unable to write project cache file " + cacheFile
