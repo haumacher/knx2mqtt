@@ -145,8 +145,8 @@ public class KNXConnector extends Thread implements NetworkLinkListener {
 							+ ")");
 					_mqtt.doPublish(dest.toString(), val, src.toString(), dpt, null, now, now);
 				} else {
-					_mqtt.doPublish(gaInfo.name, gaInfo.translateAndStoreValue(asdu, now), src.toString(), gaInfo.dpt,
-							gaInfo.getTextutal(), now, gaInfo.lastValueTimestamp);
+					_mqtt.doPublish(gaInfo.getName(), gaInfo.translateAndStoreValue(asdu, now), src.toString(),
+							gaInfo.getDpt(), gaInfo.getTextutal(), now, gaInfo.lastValueTimestamp);
 				}
 			} catch (KNXException e) {
 				L.log(Level.WARNING, "Error converting ASDU to " + dest + " from " + src);

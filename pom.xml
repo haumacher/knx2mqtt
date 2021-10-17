@@ -22,6 +22,11 @@
 			<artifactId>minimal-json</artifactId>
 			<version>0.9.4</version>
 		</dependency>
+		<dependency>
+			<groupId>de.haumacher.msgbuf</groupId>
+			<artifactId>msgbuf-api</artifactId>
+			<version>1.0.1</version>
+		</dependency>
 	</dependencies>
 
 	<build>

@@ -5,8 +5,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
@@ -31,6 +31,13 @@ import org.xml.sax.Attributes;
 import org.xml.sax.SAXException;
 import org.xml.sax.helpers.DefaultHandler;
 
+import com.tellerulam.knx2mqtt.model.Cache;
+import com.tellerulam.knx2mqtt.model.GAInfo;
+
+import de.haumacher.msgbuf.json.JsonReader;
+import de.haumacher.msgbuf.json.JsonWriter;
+import de.haumacher.msgbuf.server.io.ReaderAdapter;
+import de.haumacher.msgbuf.server.io.WriterAdapter;
 import tuwien.auto.calimero.GroupAddress;
 
 public class GroupAddressManager {
@@ -105,14 +112,25 @@ public class GroupAddressManager {
 			L.severe("ETS4/ETS5 project file " + gaFile + " does not exit");
 			System.exit(1);
 		}
-		File cacheFile = new File(gaFile + ".cache");
+		File cacheFile = new File(gaFile + ".json");
 		if (cacheFile.exists()) {
 			if (cacheFile.lastModified() > projectFile.lastModified()) {
-				try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(cacheFile))) {
-					gaTable = (Map<String, GroupAddressInfo>) ois.readObject();
-					gaByName = (Map<String, GroupAddressInfo>) ois.readObject();
-					for (GroupAddressInfo gai : gaTable.values())
+				try {
+					Cache cache;
+					try (JsonReader json = new JsonReader(
+							new ReaderAdapter(new InputStreamReader(new FileInputStream(cacheFile), "utf-8")))) {
+						cache = Cache.readCache(json);
+					}
+
+					for (GAInfo info : cache.getInfos()) {
+						GroupAddressInfo gai = new GroupAddressInfo(info.getName(), info.getAddress());
+						gai.setDpt(info.getDpt());
 						gai.createTranslator();
+
+						gaTable.put(gai.getAddress(), gai);
+						gaByName.put(gai.getName(), gai);
+					}
+
 					L.config("Read group address table from " + cacheFile + ": " + gaTable);
 					return;
 				} catch (Exception e) {
@@ -147,9 +165,14 @@ public class GroupAddressManager {
 			L.log(Level.SEVERE, "Error reading project file " + gaFile, e);
 			System.exit(1);
 		}
-		try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(cacheFile))) {
-			oos.writeObject(gaTable);
-			oos.writeObject(gaByName);
+
+		Cache cache = Cache.create();
+		for (GroupAddressInfo info : gaTable.values()) {
+			cache.addInfo(GAInfo.create().setAddress(info.getAddress()).setName(info.getName()).setDpt(info.getDpt()));
+		}
+		try (JsonWriter json = new JsonWriter(
+				new WriterAdapter(new OutputStreamWriter(new FileOutputStream(cacheFile), "utf-8")))) {
+			cache.writeContent(json);
 		} catch (Exception e) {
 			L.log(Level.INFO, "Unable to write project cache file " + cacheFile
 					+ ". This does not impair functionality, but subsequent startups will not be faster", e);
@@ -185,7 +208,7 @@ public class GroupAddressManager {
 				dptBuilder.append('0');
 			dptBuilder.append(suffix);
 		}
-		gai.dpt = dptBuilder.toString();
+		gai.setDpt(dptBuilder.toString());
 	}
 
 	/*

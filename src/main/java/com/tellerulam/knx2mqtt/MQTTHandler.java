@@ -70,12 +70,13 @@ public class MQTTHandler {
 			L.warning("Unable to translate name " + namePart + " into a group address, ignoring message " + msg);
 			return;
 		}
-		L.fine("Name " + namePart + " translates to GA " + gai.address);
+		String address = gai.getAddress();
+		L.fine("Name " + namePart + " translates to GA " + address);
 		String data = new String(msg.getPayload(), StandardCharsets.UTF_8);
 		if (set)
-			KNXConnector.doGroupWrite(gai.address, data, gai);
+			KNXConnector.doGroupWrite(address, data, gai);
 		else
-			KNXConnector.doGroupRead(gai.address, data, gai);
+			KNXConnector.doGroupRead(address, data, gai);
 	}
 
 	void processMessage(String topic, MqttMessage msg) {

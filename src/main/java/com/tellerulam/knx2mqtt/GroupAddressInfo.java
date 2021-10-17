@@ -16,11 +16,11 @@ public class GroupAddressInfo implements Serializable {
 
 	private static final long serialVersionUID = 1;
 
-	final String name;
+	private final String name;
 
-	final String address;
+	private final String address;
 
-	String dpt;
+	private String dpt;
 
 	/*
 	 * We do not want this serialized, but recreate it explicitely on loading
@@ -34,9 +34,25 @@ public class GroupAddressInfo implements Serializable {
 
 	transient long lastValueTimestamp;
 
-	GroupAddressInfo(String name, String address) {
+	public GroupAddressInfo(String name, String address) {
 		this.name = name;
 		this.address = address;
+	}
+
+	public String getName() {
+		return name;
+	}
+
+	public String getAddress() {
+		return address;
+	}
+
+	public String getDpt() {
+		return dpt;
+	}
+
+	public void setDpt(String dpt) {
+		this.dpt = dpt;
 	}
 
 	@Override

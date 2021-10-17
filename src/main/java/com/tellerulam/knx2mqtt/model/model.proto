@@ -1,0 +1,11 @@
+package com.tellerulam.knx2mqtt.model;
+
+message Cache {
+	repeated GAInfo infos;
+}
+
+message GAInfo {
+	string name;
+	string address;
+	string dpt;
+}
