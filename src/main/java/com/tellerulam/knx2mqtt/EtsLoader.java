@@ -61,7 +61,7 @@ public class EtsLoader {
 	public static void load(GroupAddressManager addressManager, String fileName) {
 		File projectFile = new File(fileName);
 		if (!projectFile.exists()) {
-			L.severe("ETS4/ETS5 project file " + fileName + " does not exit");
+			L.severe("ETS project file " + fileName + " does not exit");
 			System.exit(1);
 		}
 		File cacheFile = new File(fileName + ".json");
@@ -304,9 +304,9 @@ public class EtsLoader {
 				String dpt = inferDPTFromObjectSize(objectSize);
 				if (!dpt.startsWith("DPST-1-")) {
 					L.warning("Infering DPT for group address '" + name + "' (" + formatGroupAddress(address)
-							+ ") by size '" + objectSize
+							+ ") from size '" + objectSize
 							+ "' to '" + dpt
-							+ "'. This may not be what you want, please update your ETS4/ETS project with proper DPT specifications!");
+							+ "'. This may not be what you want, please update your ETS project with proper DPT specifications!");
 				}
 				return dpt;
 			}
