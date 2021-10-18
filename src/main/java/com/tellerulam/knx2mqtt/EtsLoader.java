@@ -2,8 +2,10 @@ package com.tellerulam.knx2mqtt;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -77,7 +79,7 @@ public class EtsLoader {
 			}
 		}
 
-		loadProjectFile(projectFile);
+		extractGroupAddressInformation(projectFile);
 
 		try {
 			_addressManager.storeToFile(cacheFile);
@@ -90,25 +92,15 @@ public class EtsLoader {
 	/**
 	 * Loads the group address information from the given ETS project file.
 	 */
-	private void loadProjectFile(File projectFile) {
+	private void extractGroupAddressInformation(File projectFile) {
 		long startTime = System.currentTimeMillis();
 		try (ZipFile zip = new ZipFile(projectFile)) {
-			// Find the project file
-			Enumeration<? extends ZipEntry> entries = zip.entries();
-			while (entries.hasMoreElements()) {
-				ZipEntry ze = entries.nextElement();
-				if (ze.getName().toLowerCase().endsWith("project.xml")) {
-					String projDir = ze.getName().substring(0, ze.getName().indexOf('/') + 1);
-					L.info("Found project directory " + projDir);
-					// Now find the project data file
-					ZipEntry projectEntry = zip.getEntry(projDir + "0.xml");
-					if (projectEntry == null) {
-						throw new IllegalArgumentException("Unable to locate 0.xml in project");
-					}
-					loadProjectFile(zip, projectEntry);
-					break;
-				}
+			ZipEntry projectEntry = locateProjectEntry(zip);
+			if (projectEntry == null) {
+				throw new IllegalArgumentException("Unable to locate 0.xml in project");
 			}
+			analyzeProjectEntry(zip, projectEntry);
+
 			long totalTime = System.currentTimeMillis() - startTime;
 			L.config("Reading group address table took " + totalTime + "ms");
 		} catch (Exception e) {
@@ -118,57 +110,223 @@ public class EtsLoader {
 	}
 
 	/**
-	 * First step in parsing: find the GroupAddresses and their IDs
+	 * Search for a file 0.xml in a folder containing the file project.xml.
 	 */
-	private void loadProjectFile(ZipFile zip, ZipEntry projectEntry)
+	private ZipEntry locateProjectEntry(ZipFile zip) {
+		Enumeration<? extends ZipEntry> entries = zip.entries();
+		while (entries.hasMoreElements()) {
+			ZipEntry entry = entries.nextElement();
+			String path = entry.getName();
+			int dirSepIdx = path.lastIndexOf('/');
+			if (dirSepIdx < 0) {
+				continue;
+			}
+			String fileName = path.substring(dirSepIdx + 1);
+			if (fileName.equalsIgnoreCase("project.xml")) {
+				String projDir = path.substring(0, dirSepIdx);
+				L.info("Found project directory " + projDir);
+				// Now find the project data file
+				return zip.getEntry(projDir + "/" + "0.xml");
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Find the GroupAddresses and their IDs in the project file <code>0.xml</code>.
+	 */
+	private void analyzeProjectEntry(ZipFile zip, ZipEntry projectEntry)
 			throws ParserConfigurationException, SAXException, IOException, KNXException {
 		DocumentBuilderFactory docBuilderFactory = DocumentBuilderFactory.newInstance();
 		docBuilderFactory.setCoalescing(true);
 		DocumentBuilder docBuilder = docBuilderFactory.newDocumentBuilder();
 		Document doc = docBuilder.parse(zip.getInputStream(projectEntry));
-		NodeList gas = doc.getElementsByTagName("GroupAddress");
 		NodeList sendConnections = doc.getElementsByTagName("Send");
 		NodeList receiveConnections = doc.getElementsByTagName("Receive");
-		for (int ix = 0; ix < gas.getLength(); ix++) {
-			Element e = (Element) gas.item(ix);
-			// Resolve the full "path" name of the group by going upwards in the
-			// GroupRanges
-			String name = null;
-			for (Element pe = e;;) {
-				if (name == null)
-					name = pe.getAttribute("Name");
-				else
-					name = pe.getAttribute("Name") + "/" + name;
 
-				pe = (Element) pe.getParentNode();
-				if (!"GroupRange".equals(pe.getNodeName()))
-					break;
+		// For all elements //GroupAddress, build their qualified group names and read out @Address
+		// and @DatapointType if available.
+		NodeList groupAddressElements = doc.getElementsByTagName("GroupAddress");
+		for (int ix = 0; ix < groupAddressElements.getLength(); ix++) {
+			Element groupAddressElement = (Element) groupAddressElements.item(ix);
+
+			String name = buildQualifiedGroupName(groupAddressElement);
+			String address = groupAddressElement.getAttribute("Address");
+
+			String dpt = groupAddressElement.getAttribute("DatapointType");
+			if (dpt.length() != 0) {
+				// We're lucky, the DPT is already specified here.
+				storeGAInfo(address, name, dpt);
+			} else {
+				// We're not lucky. Look into connections of this group address.
+				String id = groupAddressElement.getAttribute("Id");
+				analyzeGroupAddressConnections(zip, sendConnections, receiveConnections, id, address, name);
+			}
+		}
+	}
+
+	/**
+	 * Resolve the full "path" name of the group by going upwards in the GroupRanges
+	 */
+	private String buildQualifiedGroupName(Element groupAddressElement) {
+		String groupName = null;
+		Element ancestorOrSelf = groupAddressElement;
+		while (true) {
+			String localName = ancestorOrSelf.getAttribute("Name").replace('/', '_').replace(' ', '_');
+			if (groupName == null) {
+				groupName = localName;
+			} else {
+				groupName = localName + "/" + groupName;
 			}
 
-			String address = e.getAttribute("Address");
+			ancestorOrSelf = (Element) ancestorOrSelf.getParentNode();
+			if (!"GroupRange".equals(ancestorOrSelf.getNodeName())) {
+				break;
+			}
+		}
+		return groupName;
+	}
 
-			// If we're lucky, the DPT is already specified here
-			String dpt = e.getAttribute("DatapointType");
+	/**
+	 * Find out what is connected to this group address
+	 */
+	private void analyzeGroupAddressConnections(ZipFile zip, NodeList sendConnections, NodeList receiveConnections,
+			String groupAddressRefId, String address, String name)
+			throws SAXException, IOException, ParserConfigurationException, KNXException {
+		
+		List<Element> comObjectInstanceRefs = locateComObjectInstanceRefs(sendConnections, receiveConnections,
+				groupAddressRefId);
+		
+		if (comObjectInstanceRefs.size() == 0) {
+			L.info("Group " + groupAddressRefId + "/" + address + "/" + name
+					+ " does not seem to be connected to anywhere, ignoring it");
+			return;
+		}
+
+		for (Element comObjectInstanceRef : comObjectInstanceRefs) {
+			String dpt = comObjectInstanceRef.getAttribute("DatapointType");
 			if (dpt.length() != 0) {
+				// We're lucky and someone specified the dpt at the CombObjectInstanceRef.
 				storeGAInfo(address, name, dpt);
+				return;
+			}
+		}
+
+		// No luck, dig deeper.
+		for (Element comObjectInstanceRef : comObjectInstanceRefs) {
+			String refId = comObjectInstanceRef.getAttribute("RefId");
+			if (analyzeConnectedComObject(zip, refId, address, name, false)) {
+				return;
+			}
+		}
+
+		// No luck at all, infer datapoint type from data size.
+		for (Element comObjectInstanceRef : comObjectInstanceRefs) {
+			String refId = comObjectInstanceRef.getAttribute("RefId");
+			if (analyzeConnectedComObject(zip, refId, address, name, true)) {
+				return;
+			}
+		}
+
+		throw new IllegalArgumentException(
+				"Unable to determine datapoint type for " + groupAddressRefId + "/" + address + "/" + name);
+	}
+
+	private List<Element> locateComObjectInstanceRefs(NodeList sendConnections, NodeList receiveConnections,
+			String groupAddressRefId) {
+		ArrayList<Element> result = new ArrayList<>();
+		addComObjectInstanceRefs(result, sendConnections, groupAddressRefId);
+		addComObjectInstanceRefs(result, receiveConnections, groupAddressRefId);
+		return result;
+	}
+
+	private void addComObjectInstanceRefs(ArrayList<Element> result, NodeList connections, String groupAddressRefId) {
+		for (int n = 0; n < connections.getLength(); n++) {
+			Element connection = (Element) connections.item(n);
+			if (!groupAddressRefId.equals(connection.getAttribute("GroupAddressRefId"))) {
 				continue;
 			}
 
-			// We're not lucky. Look into the connections
-			processETS4GroupAddressConnections(zip, sendConnections, receiveConnections, e.getAttribute("Id"), address,
-					name);
+			Element comObjectInstanceRef = (Element) connection.getParentNode().getParentNode();
+			if (!"ComObjectInstanceRef".equals(comObjectInstanceRef.getNodeName())) {
+				L.warning("Weird project structure -- connection not owned by a ComObjectInstanceRef, but "
+						+ comObjectInstanceRef.getNodeName());
+				continue;
+			}
+
+			result.add(comObjectInstanceRef);
 		}
+	}
+
+	private boolean analyzeConnectedComObject(ZipFile zip, String comObjectRefId, String address, String name,
+			boolean useObjectSize) throws SAXException, IOException, ParserConfigurationException, KNXException {
+		// We need to look into the device description that defines the com object. Determine the
+		// device's filename from the reference ID (e.g. M-0083_A-0014-11-EA36_O-56_R-10112).
+		String refIdParts[] = comObjectRefId.split("_");
+
+		// Determine path, e.g. M-0083/M-0083_A-0014-11-EA36.xml
+		String devicePath = refIdParts[0] + "/" + refIdParts[0] + "_" + refIdParts[1] + ".xml";
+		Map<String, Map<String, String>> dev = lookupDeviceDescription(zip, devicePath);
+
+		Map<String, String> comObjRefProperties = dev.get(comObjectRefId);
+		if (comObjRefProperties == null) {
+			throw new IllegalArgumentException(
+					"Unable to find ComObjectRef with Id " + comObjectRefId + " in " + devicePath);
+		}
+
+		// Perhaps the ComObjectRef
+		if (analyzeComObject(comObjRefProperties, zip, address, name, useObjectSize)) {
+			return true;
+		}
+
+		String comObjectId = comObjRefProperties.get("RefId");
+		Map<String, String> comObjectProperties = dev.get(comObjectId);
+		if (comObjectProperties == null) {
+			throw new IllegalArgumentException("Unable to find ComObject with Id " + comObjectId + " in " + devicePath);
+		}
+
+		if (analyzeComObject(comObjectProperties, zip, address, name, useObjectSize)) {
+			return true;
+		}
+
+		return false;
+	}
+
+	private boolean analyzeComObject(Map<String, String> comObjProperties, ZipFile zip, String address, String name,
+			boolean useObjectSize) throws SAXException, IOException, ParserConfigurationException, KNXException {
+		if (useObjectSize) {
+			String objectSize = comObjProperties.get("ObjectSize");
+			if (objectSize != null && objectSize.length() != 0) {
+				// "1 Bit" is pretty unambigious -- no warning for that
+				if (!"1 Bit".equals(objectSize)) {
+					L.warning("Warning: Infering DPT for " + new GroupAddress(Integer.parseInt(address)) + " (" + name
+							+ ") by objSize '" + objectSize
+							+ "' - this is not good, please update your ETS4/ETS project with proper DPT specifications!");
+				}
+				String inferedDpt = inferDPTFromObjectSize(zip, objectSize);
+
+				storeGAInfo(address, name, inferedDpt);
+				return true;
+			}
+		} else {
+			String dpt = comObjProperties.get("DatapointType");
+			if (dpt != null && dpt.length() != 0) {
+				storeGAInfo(address, name, dpt);
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private void storeGAInfo(String address, String name, String datapointType) throws KNXException {
 		String ga = new GroupAddress(Integer.parseInt(address)).toString();
-
+	
 		GroupAddressInfo gai = _addressManager.getGAInfoForAddress(ga);
 		if (gai == null) {
 			gai = new GroupAddressInfo(name, ga);
 			_addressManager.add(gai);
 		}
-
+	
 		Pattern p = Pattern.compile("DPS?T-([0-9]+)(-([0-9]+))?");
 		Matcher m = p.matcher(datapointType);
 		if (!m.find())
@@ -187,98 +345,6 @@ public class EtsLoader {
 		}
 		gai.setDpt(dptBuilder.toString());
 		gai.createTranslator();
-	}
-
-	/**
-	 * Find out what is connected to this group address
-	 */
-	private void processETS4GroupAddressConnections(ZipFile zip, NodeList sendConnections, NodeList receiveConnections,
-			String id, String address, String name)
-			throws SAXException, IOException, ParserConfigurationException, KNXException {
-		boolean foundConnection = false;
-		for (int attempt = 0; attempt < 4; attempt++) {
-			// We can give up early if we didn't find a connection at all
-			if (attempt == 2 && !foundConnection)
-				break;
-			NodeList connectors = ((attempt & 1) == 0) ? receiveConnections : sendConnections;
-			boolean useObjectSize = (attempt & 2) != 0;
-			for (int ix = 0; ix < connectors.getLength(); ix++) {
-				Element e = (Element) connectors.item(ix);
-				if (id.equals(e.getAttribute("GroupAddressRefId"))) {
-					Element pe = (Element) e.getParentNode().getParentNode();
-					if (!"ComObjectInstanceRef".equals(pe.getNodeName())) {
-						L.warning("Weird project structure -- connection not owned by a ComObjectInstanceRef, but "
-								+ pe.getNodeName());
-						continue;
-					}
-					foundConnection = true;
-
-					/*
-					 * Perhaps we're lucky and someone specified it in the CombObjectInstanceRef?
-					 */
-					String dpt = pe.getAttribute("DatapointType");
-					if (dpt.length() != 0) {
-						storeGAInfo(address, name, dpt);
-						return;
-					}
-					/* No luck, no luck. Dig deeper */
-					if (processETS4GroupConnection(zip, pe.getAttribute("RefId"), address, name, useObjectSize))
-						return;
-				}
-			}
-		}
-		if (!foundConnection)
-			L.info("Group " + id + "/" + address + "/" + name
-					+ " does not seem to be connected to anywhere, ignoring it");
-		else
-			throw new IllegalArgumentException(
-					"Unable to determine datapoint type for " + id + "/" + address + "/" + name);
-	}
-
-	private boolean processETS4GroupConnection(ZipFile zip, String refId, String address, String name, boolean useObjectSize) throws SAXException, IOException, ParserConfigurationException, KNXException {
-		// Right, we need to look into the device description. Determine it's
-		// filename
-		String refIdParts[] = refId.split("_");
-		String pathName = refIdParts[0] + "/" + refIdParts[0] + "_" + refIdParts[1] + ".xml";
-		Map<String, Map<String, String>> dev = loadDeviceDescription(zip, pathName);
-		Map<String, String> cobjref = dev.get(refId);
-		if (cobjref == null)
-			throw new IllegalArgumentException("Unable to find ComObjectRef with Id " + refId + " in " + pathName);
-		// Perhaps the ComObjectRef
-		if (processETS4ComObj(cobjref, zip, address, name, useObjectSize))
-			return true;
-
-		String refco = cobjref.get("RefId");
-		Map<String, String> cobj = dev.get(refco);
-		if (cobj == null)
-			throw new IllegalArgumentException("Unable to find ComObject with Id " + refco + " in " + pathName);
-
-		if (processETS4ComObj(cobj, zip, address, name, useObjectSize))
-			return true;
-
-		return false;
-	}
-
-	private boolean processETS4ComObj(Map<String, String> cobj, ZipFile zip, String address, String name,
-			boolean useObjectSize) throws SAXException, IOException, ParserConfigurationException, KNXException {
-		String dpt = cobj.get("DatapointType");
-		if (dpt != null && dpt.length() != 0) {
-			storeGAInfo(address, name, dpt);
-			return true;
-		}
-		if (useObjectSize) {
-			String objSize = cobj.get("ObjectSize");
-			if (objSize != null && objSize.length() != 0) {
-				// "1 Bit" is pretty unambigious -- no warning for that
-				if (!"1 Bit".equals(objSize))
-					L.warning("Warning: Infering DPT for " + new GroupAddress(Integer.parseInt(address)) + " (" + name
-							+ ") by objSize " + objSize
-							+ " - this is not good, please update your ETS4/ETS project with proper DPT specifications!");
-				storeGAInfo(address, name, inferDPTFromObjectSize(zip, objSize));
-				return true;
-			}
-		}
-		return false;
 	}
 
 	private String inferDPTFromObjectSize(ZipFile zip, String objSize)
@@ -328,7 +394,7 @@ public class EtsLoader {
 		return dptMap;
 	}
 
-	private Map<String, Map<String, String>> loadDeviceDescription(ZipFile zip, String filename)
+	private Map<String, Map<String, String>> lookupDeviceDescription(ZipFile zip, String filename)
 			throws ParserConfigurationException, SAXException, IOException {
 		if (_deviceDescriptionCache == null) {
 			_deviceDescriptionCache = new HashMap<>();
@@ -338,24 +404,39 @@ public class EtsLoader {
 				return cacheEntry;
 			}
 		}
-		ZipEntry ze = zip.getEntry(filename);
-		if (ze == null)
+
+		Map<String, Map<String, String>> attrById = parseDeviceDescription(zip, filename);
+
+		_deviceDescriptionCache.put(filename, attrById);
+		return attrById;
+	}
+
+	/**
+	 * Parses a device definition entry and delivers a mapping of all defined <code>ComObject</code>
+	 * and <code>ComObjectRef</code> element IDs to their attribute values.
+	 */
+	private Map<String, Map<String, String>> parseDeviceDescription(ZipFile zip, String filename)
+			throws SAXException, IOException, ParserConfigurationException {
+		ZipEntry deviceEntry = zip.getEntry(filename);
+		if (deviceEntry == null) {
 			throw new IllegalArgumentException("Unable to find device description " + filename);
+		}
+
 		final Map<String, Map<String, String>> attrById = new HashMap<>();
-		DefaultHandler gaHandler = new DefaultHandler() {
+		DefaultHandler deviceHandler = new DefaultHandler() {
 			@Override
 			public void startElement(String uri, String localName, String qName, Attributes attr) throws SAXException {
 				if ("ComObjectRef".equals(qName) || "ComObject".equals(qName)) {
-					// Convert the mutable Attributes object
-					Map<String, String> pattr = new HashMap<>();
-					for (int ix = 0; ix < attr.getLength(); ix++)
-						pattr.put(attr.getQName(ix), attr.getValue(ix));
-					attrById.put(pattr.get("Id"), pattr);
+					// Store properties.
+					Map<String, String> properties = new HashMap<>();
+					for (int n = 0; n < attr.getLength(); n++) {
+						properties.put(attr.getQName(n), attr.getValue(n));
+					}
+					attrById.put(properties.get("Id"), properties);
 				}
 			}
 		};
-		newSaxParser().parse(zip.getInputStream(ze), gaHandler);
-		_deviceDescriptionCache.put(filename, attrById);
+		newSaxParser().parse(zip.getInputStream(deviceEntry), deviceHandler);
 		return attrById;
 	}
 
