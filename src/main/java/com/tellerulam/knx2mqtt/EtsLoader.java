@@ -56,13 +56,12 @@ public class EtsLoader {
 	}
 
 	/**
-	 * Load an ETS4 or ETS5 project file
+	 * Load an ETS project file
 	 */
 	public static void load(GroupAddressManager addressManager, String fileName) {
 		File projectFile = new File(fileName);
 		if (!projectFile.exists()) {
-			L.severe("ETS project file " + fileName + " does not exit");
-			System.exit(1);
+			throw new IllegalArgumentException("ETS project file " + fileName + " does not exist.");
 		}
 		File cacheFile = new File(fileName + ".json");
 		if (cacheFile.exists()) {
@@ -70,13 +69,13 @@ public class EtsLoader {
 				try {
 					addressManager.readFromFile(cacheFile);
 
-					EtsLoader.L.config("Read group address table from " + cacheFile + ".");
+					L.fine("Read group address table from " + cacheFile + ".");
 					return;
 				} catch (Exception e) {
 					L.log(Level.WARNING, "Error reading cache file " + cacheFile + ", ignoring it", e);
 				}
 			} else {
-				L.info("Cache file " + cacheFile + " exists, but project file is newer, ignoring it");
+				L.fine("Cache file " + cacheFile + " exists, but ETS project file is newer, ignoring it");
 			}
 		}
 
@@ -85,7 +84,7 @@ public class EtsLoader {
 		try {
 			addressManager.storeToFile(cacheFile);
 		} catch (Exception e) {
-			L.log(Level.INFO, "Unable to write project cache file " + cacheFile
+			L.log(Level.WARNING, "Unable to write group address cache file " + cacheFile
 					+ ". This does not impair functionality, but subsequent startups will not be faster", e);
 		}
 	}
@@ -99,16 +98,12 @@ public class EtsLoader {
 			EtsLoader loader = new EtsLoader(addressManager, zip);
 
 			ZipEntry projectEntry = loader.locateProjectEntry();
-			if (projectEntry == null) {
-				throw new IllegalArgumentException("Unable to locate 0.xml in project");
-			}
 			loader.analyzeProjectEntry(projectEntry);
 
 			long totalTime = System.currentTimeMillis() - startTime;
-			L.config("Reading group address table took " + totalTime + "ms");
+			L.fine("Reading group address table took " + totalTime + "ms");
 		} catch (Exception e) {
-			L.log(Level.SEVERE, "Error reading project file " + projectFile, e);
-			System.exit(1);
+			throw new RuntimeException("Error reading ETS project file '" + projectFile + "'.", e);
 		}
 	}
 
@@ -127,16 +122,15 @@ public class EtsLoader {
 			String fileName = path.substring(dirSepIdx + 1);
 			if (fileName.equalsIgnoreCase("project.xml")) {
 				String projDir = path.substring(0, dirSepIdx);
-				L.info("Found project directory " + projDir);
-				// Now find the project data file
+				L.fine("Found project directory '" + projDir + "' in ETS project file.");
 				return _zip.getEntry(projDir + "/" + "0.xml");
 			}
 		}
-		return null;
+		throw new IllegalArgumentException("Unable to locate entry '0.xml' in ETS project file.");
 	}
 
 	/**
-	 * Find the GroupAddresses and their IDs in the project file <code>0.xml</code>.
+	 * Find the GroupAddresses and their IDs in the ETS project file <code>0.xml</code>.
 	 */
 	private void analyzeProjectEntry(ZipEntry projectEntry)
 			throws ParserConfigurationException, SAXException, IOException, KNXException {
@@ -254,8 +248,8 @@ public class EtsLoader {
 
 			Element comObjectInstanceRef = (Element) connection.getParentNode().getParentNode();
 			if (!"ComObjectInstanceRef".equals(comObjectInstanceRef.getNodeName())) {
-				L.warning("Weird project structure -- connection not owned by a ComObjectInstanceRef, but "
-						+ comObjectInstanceRef.getNodeName());
+				L.warning("Weird ETS project file structure. Connection not owned by a ComObjectInstanceRef, but "
+						+ comObjectInstanceRef.getNodeName() + ".");
 				continue;
 			}
 
