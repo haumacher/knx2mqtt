@@ -147,22 +147,27 @@ public class EtsLoader {
 		// For all elements //GroupAddress, build their qualified group names and read out @Address
 		// and @DatapointType if available.
 		NodeList groupAddressElements = doc.getElementsByTagName("GroupAddress");
-		for (int ix = 0; ix < groupAddressElements.getLength(); ix++) {
-			Element groupAddressElement = (Element) groupAddressElements.item(ix);
+		for (int n = 0; n < groupAddressElements.getLength(); n++) {
+			Element groupAddressElement = (Element) groupAddressElements.item(n);
 
 			String name = buildQualifiedGroupName(groupAddressElement);
 			String address = groupAddressElement.getAttribute("Address");
 
-			String dpt = groupAddressElement.getAttribute("DatapointType");
-			if (dpt.length() != 0) {
-				// We're lucky, the DPT is already specified here.
-				storeGAInfo(address, name, dpt);
-			} else {
+			String dpt = nonEmpty(groupAddressElement.getAttribute("DatapointType"));
+			if (dpt == null) {
 				// We're not lucky. Look into connections of this group address.
 				String id = groupAddressElement.getAttribute("Id");
-				analyzeGroupAddressConnections(zip, sendConnections, receiveConnections, id, address, name);
+				dpt = dptFromGroupAddressConnections(zip, sendConnections, receiveConnections, id, address, name);
+			}
+
+			if (dpt != null) {
+				storeGAInfo(address, name, dpt);
 			}
 		}
+	}
+
+	private static String nonEmpty(String value) {
+		return value == null ? null : value.isEmpty() ? null : value;
 	}
 
 	/**
@@ -190,46 +195,47 @@ public class EtsLoader {
 	/**
 	 * Find out what is connected to this group address
 	 */
-	private void analyzeGroupAddressConnections(ZipFile zip, NodeList sendConnections, NodeList receiveConnections,
+	private String dptFromGroupAddressConnections(ZipFile zip, NodeList sendConnections, NodeList receiveConnections,
 			String groupAddressRefId, String address, String name)
-			throws SAXException, IOException, ParserConfigurationException, KNXException {
+			throws SAXException, IOException, ParserConfigurationException {
 		
 		List<Element> comObjectInstanceRefs = locateComObjectInstanceRefs(sendConnections, receiveConnections,
 				groupAddressRefId);
 		
 		if (comObjectInstanceRefs.size() == 0) {
-			L.info("Group " + groupAddressRefId + "/" + address + "/" + name
-					+ " does not seem to be connected to anywhere, ignoring it");
-			return;
+			L.info("Group address '" + name + "' (" + formatGroupAddress(address)
+					+ ") does not seem to be connected at all, ignoring it");
+			return null;
 		}
 
 		for (Element comObjectInstanceRef : comObjectInstanceRefs) {
 			String dpt = comObjectInstanceRef.getAttribute("DatapointType");
 			if (dpt.length() != 0) {
 				// We're lucky and someone specified the dpt at the CombObjectInstanceRef.
-				storeGAInfo(address, name, dpt);
-				return;
+				return dpt;
 			}
 		}
 
 		// No luck, dig deeper.
 		for (Element comObjectInstanceRef : comObjectInstanceRefs) {
 			String refId = comObjectInstanceRef.getAttribute("RefId");
-			if (analyzeConnectedComObject(zip, refId, address, name, false)) {
-				return;
+			String dpt = dptFromConnectedComObject(zip, refId, address, name, false);
+			if (dpt != null) {
+				return dpt;
 			}
 		}
 
 		// No luck at all, infer datapoint type from data size.
 		for (Element comObjectInstanceRef : comObjectInstanceRefs) {
 			String refId = comObjectInstanceRef.getAttribute("RefId");
-			if (analyzeConnectedComObject(zip, refId, address, name, true)) {
-				return;
+			String dpt = dptFromConnectedComObject(zip, refId, address, name, true);
+			if (dpt != null) {
+				return dpt;
 			}
 		}
 
-		throw new IllegalArgumentException(
-				"Unable to determine datapoint type for " + groupAddressRefId + "/" + address + "/" + name);
+		L.warning("No DPT found for aroup address '" + name + "' (" + formatGroupAddress(address) + "), ignoring it");
+		return null;
 	}
 
 	private List<Element> locateComObjectInstanceRefs(NodeList sendConnections, NodeList receiveConnections,
@@ -258,8 +264,8 @@ public class EtsLoader {
 		}
 	}
 
-	private boolean analyzeConnectedComObject(ZipFile zip, String comObjectRefId, String address, String name,
-			boolean useObjectSize) throws SAXException, IOException, ParserConfigurationException, KNXException {
+	private String dptFromConnectedComObject(ZipFile zip, String comObjectRefId, String address, String name,
+			boolean useObjectSize) throws SAXException, IOException, ParserConfigurationException {
 		// We need to look into the device description that defines the com object. Determine the
 		// device's filename from the reference ID (e.g. M-0083_A-0014-11-EA36_O-56_R-10112).
 		String refIdParts[] = comObjectRefId.split("_");
@@ -275,8 +281,9 @@ public class EtsLoader {
 		}
 
 		// Perhaps the ComObjectRef
-		if (analyzeComObject(comObjRefProperties, zip, address, name, useObjectSize)) {
-			return true;
+		String dpt = dptFromComObject(comObjRefProperties, zip, address, name, useObjectSize);
+		if (dpt != null) {
+			return dpt;
 		}
 
 		String comObjectId = comObjRefProperties.get("RefId");
@@ -285,41 +292,33 @@ public class EtsLoader {
 			throw new IllegalArgumentException("Unable to find ComObject with Id " + comObjectId + " in " + devicePath);
 		}
 
-		if (analyzeComObject(comObjectProperties, zip, address, name, useObjectSize)) {
-			return true;
-		}
-
-		return false;
+		return dptFromComObject(comObjectProperties, zip, address, name, useObjectSize);
 	}
 
-	private boolean analyzeComObject(Map<String, String> comObjProperties, ZipFile zip, String address, String name,
-			boolean useObjectSize) throws SAXException, IOException, ParserConfigurationException, KNXException {
+	private String dptFromComObject(Map<String, String> comObjProperties, ZipFile zip, String address, String name,
+			boolean useObjectSize) throws SAXException, IOException, ParserConfigurationException {
 		if (useObjectSize) {
-			String objectSize = comObjProperties.get("ObjectSize");
-			if (objectSize != null && objectSize.length() != 0) {
-				// "1 Bit" is pretty unambigious -- no warning for that
-				if (!"1 Bit".equals(objectSize)) {
-					L.warning("Warning: Infering DPT for " + new GroupAddress(Integer.parseInt(address)) + " (" + name
-							+ ") by objSize '" + objectSize
-							+ "' - this is not good, please update your ETS4/ETS project with proper DPT specifications!");
+			String objectSize = nonEmpty(comObjProperties.get("ObjectSize"));
+			if (objectSize == null) {
+				return null;
+			} else {
+				String dpt = inferDPTFromObjectSize(zip, objectSize);
+				if (!dpt.startsWith("DPST-1-")) {
+					L.warning("Infering DPT for group address '" + name + "' (" + formatGroupAddress(address)
+							+ ") by size '" + objectSize
+							+ "' to '" + dpt
+							+ "'. This may not be what you want, please update your ETS4/ETS project with proper DPT specifications!");
 				}
-				String inferedDpt = inferDPTFromObjectSize(zip, objectSize);
-
-				storeGAInfo(address, name, inferedDpt);
-				return true;
+				return dpt;
 			}
 		} else {
-			String dpt = comObjProperties.get("DatapointType");
-			if (dpt != null && dpt.length() != 0) {
-				storeGAInfo(address, name, dpt);
-				return true;
-			}
+			String dpt = nonEmpty(comObjProperties.get("DatapointType"));
+			return dpt;
 		}
-		return false;
 	}
 
 	private void storeGAInfo(String address, String name, String datapointType) throws KNXException {
-		String ga = new GroupAddress(Integer.parseInt(address)).toString();
+		String ga = formatGroupAddress(address);
 	
 		GroupAddressInfo gai = _addressManager.getGAInfoForAddress(ga);
 		if (gai == null) {
@@ -347,28 +346,32 @@ public class EtsLoader {
 		gai.createTranslator();
 	}
 
+	private String formatGroupAddress(String address) {
+		return new GroupAddress(Integer.parseInt(address)).toString();
+	}
+
 	private String inferDPTFromObjectSize(ZipFile zip, String objSize)
 			throws SAXException, IOException, ParserConfigurationException {
 		// Take a guess based on size
-		String dpitid = null;
-		// Some standard things
-		if ("1 Bit".equals(objSize))
-			dpitid = "1-1";
-		else if ("1 Byte".equals(objSize))
-			dpitid = "5-1";
-		else if ("2 Bytes".equals(objSize))
-			dpitid = "9-1";
-		else {
+		switch (objSize) {
+		case "1 Bit":
+			return "DPST-1-1";
+		case "1 Byte":
+			return "DPST-5-1";
+		case "2 Bytes":
+			return "DPST-9-1";
+		default: {
 			if (_dptMap == null) {
 				_dptMap = loadDptMap(zip);
 			}
 			String sizeSpec[] = objSize.split(" ");
 			int bits = Integer.parseInt(sizeSpec[0]);
-			if (sizeSpec[1].startsWith("Byte"))
+			if (sizeSpec[1].startsWith("Byte")) {
 				bits *= 8;
+			}
 			return _dptMap.get(bits);
 		}
-		return "DPST-" + dpitid;
+		}
 	}
 
 	private Map<Integer, String> loadDptMap(ZipFile zip)
