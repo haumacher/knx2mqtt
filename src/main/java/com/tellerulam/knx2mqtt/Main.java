@@ -76,7 +76,7 @@ public class Main {
 		if (fileName == null) {
 			L.config("No ETS4/ETS5 project file specified");
 		} else {
-			new EtsLoader(addressManager).load(fileName);
+			EtsLoader.load(addressManager, fileName);
 		}
 	}
 

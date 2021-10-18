@@ -45,19 +45,20 @@ public class EtsLoader {
 
 	private SAXParserFactory _saxFactory;
 
+	private ZipFile _zip;
+
 	/**
 	 * Creates a {@link EtsLoader}.
-	 *
-	 * @param addressManager
 	 */
-	public EtsLoader(GroupAddressManager addressManager) {
+	private EtsLoader(GroupAddressManager addressManager, ZipFile zip) {
 		_addressManager = addressManager;
+		_zip = zip;
 	}
 
 	/**
 	 * Load an ETS4 or ETS5 project file
 	 */
-	public void load(String fileName) {
+	public static void load(GroupAddressManager addressManager, String fileName) {
 		File projectFile = new File(fileName);
 		if (!projectFile.exists()) {
 			L.severe("ETS4/ETS5 project file " + fileName + " does not exit");
@@ -67,7 +68,7 @@ public class EtsLoader {
 		if (cacheFile.exists()) {
 			if (cacheFile.lastModified() > projectFile.lastModified()) {
 				try {
-					_addressManager.readFromFile(cacheFile);
+					addressManager.readFromFile(cacheFile);
 
 					EtsLoader.L.config("Read group address table from " + cacheFile + ".");
 					return;
@@ -79,10 +80,10 @@ public class EtsLoader {
 			}
 		}
 
-		extractGroupAddressInformation(projectFile);
+		analyzeProjectFile(addressManager, projectFile);
 
 		try {
-			_addressManager.storeToFile(cacheFile);
+			addressManager.storeToFile(cacheFile);
 		} catch (Exception e) {
 			L.log(Level.INFO, "Unable to write project cache file " + cacheFile
 					+ ". This does not impair functionality, but subsequent startups will not be faster", e);
@@ -92,14 +93,16 @@ public class EtsLoader {
 	/**
 	 * Loads the group address information from the given ETS project file.
 	 */
-	private void extractGroupAddressInformation(File projectFile) {
+	private static void analyzeProjectFile(GroupAddressManager addressManager, File projectFile) {
 		long startTime = System.currentTimeMillis();
 		try (ZipFile zip = new ZipFile(projectFile)) {
-			ZipEntry projectEntry = locateProjectEntry(zip);
+			EtsLoader loader = new EtsLoader(addressManager, zip);
+
+			ZipEntry projectEntry = loader.locateProjectEntry();
 			if (projectEntry == null) {
 				throw new IllegalArgumentException("Unable to locate 0.xml in project");
 			}
-			analyzeProjectEntry(zip, projectEntry);
+			loader.analyzeProjectEntry(projectEntry);
 
 			long totalTime = System.currentTimeMillis() - startTime;
 			L.config("Reading group address table took " + totalTime + "ms");
@@ -112,8 +115,8 @@ public class EtsLoader {
 	/**
 	 * Search for a file 0.xml in a folder containing the file project.xml.
 	 */
-	private ZipEntry locateProjectEntry(ZipFile zip) {
-		Enumeration<? extends ZipEntry> entries = zip.entries();
+	private ZipEntry locateProjectEntry() {
+		Enumeration<? extends ZipEntry> entries = _zip.entries();
 		while (entries.hasMoreElements()) {
 			ZipEntry entry = entries.nextElement();
 			String path = entry.getName();
@@ -126,7 +129,7 @@ public class EtsLoader {
 				String projDir = path.substring(0, dirSepIdx);
 				L.info("Found project directory " + projDir);
 				// Now find the project data file
-				return zip.getEntry(projDir + "/" + "0.xml");
+				return _zip.getEntry(projDir + "/" + "0.xml");
 			}
 		}
 		return null;
@@ -135,12 +138,12 @@ public class EtsLoader {
 	/**
 	 * Find the GroupAddresses and their IDs in the project file <code>0.xml</code>.
 	 */
-	private void analyzeProjectEntry(ZipFile zip, ZipEntry projectEntry)
+	private void analyzeProjectEntry(ZipEntry projectEntry)
 			throws ParserConfigurationException, SAXException, IOException, KNXException {
 		DocumentBuilderFactory docBuilderFactory = DocumentBuilderFactory.newInstance();
 		docBuilderFactory.setCoalescing(true);
 		DocumentBuilder docBuilder = docBuilderFactory.newDocumentBuilder();
-		Document doc = docBuilder.parse(zip.getInputStream(projectEntry));
+		Document doc = docBuilder.parse(_zip.getInputStream(projectEntry));
 		NodeList sendConnections = doc.getElementsByTagName("Send");
 		NodeList receiveConnections = doc.getElementsByTagName("Receive");
 
@@ -157,17 +160,13 @@ public class EtsLoader {
 			if (dpt == null) {
 				// We're not lucky. Look into connections of this group address.
 				String id = groupAddressElement.getAttribute("Id");
-				dpt = dptFromGroupAddressConnections(zip, sendConnections, receiveConnections, id, address, name);
+				dpt = dptFromGroupAddressConnections(sendConnections, receiveConnections, id, address, name);
 			}
 
 			if (dpt != null) {
 				storeGAInfo(address, name, dpt);
 			}
 		}
-	}
-
-	private static String nonEmpty(String value) {
-		return value == null ? null : value.isEmpty() ? null : value;
 	}
 
 	/**
@@ -195,7 +194,7 @@ public class EtsLoader {
 	/**
 	 * Find out what is connected to this group address
 	 */
-	private String dptFromGroupAddressConnections(ZipFile zip, NodeList sendConnections, NodeList receiveConnections,
+	private String dptFromGroupAddressConnections(NodeList sendConnections, NodeList receiveConnections,
 			String groupAddressRefId, String address, String name)
 			throws SAXException, IOException, ParserConfigurationException {
 		
@@ -219,7 +218,7 @@ public class EtsLoader {
 		// No luck, dig deeper.
 		for (Element comObjectInstanceRef : comObjectInstanceRefs) {
 			String refId = comObjectInstanceRef.getAttribute("RefId");
-			String dpt = dptFromConnectedComObject(zip, refId, address, name, false);
+			String dpt = dptFromConnectedComObject(refId, address, name, false);
 			if (dpt != null) {
 				return dpt;
 			}
@@ -228,7 +227,7 @@ public class EtsLoader {
 		// No luck at all, infer datapoint type from data size.
 		for (Element comObjectInstanceRef : comObjectInstanceRefs) {
 			String refId = comObjectInstanceRef.getAttribute("RefId");
-			String dpt = dptFromConnectedComObject(zip, refId, address, name, true);
+			String dpt = dptFromConnectedComObject(refId, address, name, true);
 			if (dpt != null) {
 				return dpt;
 			}
@@ -264,15 +263,15 @@ public class EtsLoader {
 		}
 	}
 
-	private String dptFromConnectedComObject(ZipFile zip, String comObjectRefId, String address, String name,
-			boolean useObjectSize) throws SAXException, IOException, ParserConfigurationException {
+	private String dptFromConnectedComObject(String comObjectRefId, String address, String name, boolean useObjectSize)
+			throws SAXException, IOException, ParserConfigurationException {
 		// We need to look into the device description that defines the com object. Determine the
 		// device's filename from the reference ID (e.g. M-0083_A-0014-11-EA36_O-56_R-10112).
 		String refIdParts[] = comObjectRefId.split("_");
 
 		// Determine path, e.g. M-0083/M-0083_A-0014-11-EA36.xml
 		String devicePath = refIdParts[0] + "/" + refIdParts[0] + "_" + refIdParts[1] + ".xml";
-		Map<String, Map<String, String>> dev = lookupDeviceDescription(zip, devicePath);
+		Map<String, Map<String, String>> dev = lookupDeviceDescription(devicePath);
 
 		Map<String, String> comObjRefProperties = dev.get(comObjectRefId);
 		if (comObjRefProperties == null) {
@@ -281,7 +280,7 @@ public class EtsLoader {
 		}
 
 		// Perhaps the ComObjectRef
-		String dpt = dptFromComObject(comObjRefProperties, zip, address, name, useObjectSize);
+		String dpt = dptFromComObject(comObjRefProperties, address, name, useObjectSize);
 		if (dpt != null) {
 			return dpt;
 		}
@@ -292,17 +291,17 @@ public class EtsLoader {
 			throw new IllegalArgumentException("Unable to find ComObject with Id " + comObjectId + " in " + devicePath);
 		}
 
-		return dptFromComObject(comObjectProperties, zip, address, name, useObjectSize);
+		return dptFromComObject(comObjectProperties, address, name, useObjectSize);
 	}
 
-	private String dptFromComObject(Map<String, String> comObjProperties, ZipFile zip, String address, String name,
+	private String dptFromComObject(Map<String, String> comObjProperties, String address, String name,
 			boolean useObjectSize) throws SAXException, IOException, ParserConfigurationException {
 		if (useObjectSize) {
 			String objectSize = nonEmpty(comObjProperties.get("ObjectSize"));
 			if (objectSize == null) {
 				return null;
 			} else {
-				String dpt = inferDPTFromObjectSize(zip, objectSize);
+				String dpt = inferDPTFromObjectSize(objectSize);
 				if (!dpt.startsWith("DPST-1-")) {
 					L.warning("Infering DPT for group address '" + name + "' (" + formatGroupAddress(address)
 							+ ") by size '" + objectSize
@@ -346,11 +345,7 @@ public class EtsLoader {
 		gai.createTranslator();
 	}
 
-	private String formatGroupAddress(String address) {
-		return new GroupAddress(Integer.parseInt(address)).toString();
-	}
-
-	private String inferDPTFromObjectSize(ZipFile zip, String objSize)
+	private String inferDPTFromObjectSize(String objSize)
 			throws SAXException, IOException, ParserConfigurationException {
 		// Take a guess based on size
 		switch (objSize) {
@@ -361,20 +356,25 @@ public class EtsLoader {
 		case "2 Bytes":
 			return "DPST-9-1";
 		default: {
-			if (_dptMap == null) {
-				_dptMap = loadDptMap(zip);
-			}
+			Map<Integer, String> dptMap = getDptMap();
 			String sizeSpec[] = objSize.split(" ");
 			int bits = Integer.parseInt(sizeSpec[0]);
 			if (sizeSpec[1].startsWith("Byte")) {
 				bits *= 8;
 			}
-			return _dptMap.get(bits);
+			return dptMap.get(bits);
 		}
 		}
 	}
 
-	private Map<Integer, String> loadDptMap(ZipFile zip)
+	private Map<Integer, String> getDptMap() throws ParserConfigurationException, SAXException, IOException {
+		if (_dptMap == null) {
+			_dptMap = loadDptMap();
+		}
+		return _dptMap;
+	}
+
+	private Map<Integer, String> loadDptMap()
 			throws ParserConfigurationException, SAXException, IOException {
 		Map<Integer, String> dptMap = new HashMap<>();
 		DefaultHandler gaHandler = new DefaultHandler() {
@@ -393,11 +393,11 @@ public class EtsLoader {
 				}
 			}
 		};
-		newSaxParser().parse(zip.getInputStream(new ZipEntry("knx_master.xml")), gaHandler);
+		newParser().parse(_zip.getInputStream(new ZipEntry("knx_master.xml")), gaHandler);
 		return dptMap;
 	}
 
-	private Map<String, Map<String, String>> lookupDeviceDescription(ZipFile zip, String filename)
+	private Map<String, Map<String, String>> lookupDeviceDescription(String filename)
 			throws ParserConfigurationException, SAXException, IOException {
 		if (_deviceDescriptionCache == null) {
 			_deviceDescriptionCache = new HashMap<>();
@@ -408,7 +408,7 @@ public class EtsLoader {
 			}
 		}
 
-		Map<String, Map<String, String>> attrById = parseDeviceDescription(zip, filename);
+		Map<String, Map<String, String>> attrById = parseDeviceDescription(filename);
 
 		_deviceDescriptionCache.put(filename, attrById);
 		return attrById;
@@ -418,9 +418,9 @@ public class EtsLoader {
 	 * Parses a device definition entry and delivers a mapping of all defined <code>ComObject</code>
 	 * and <code>ComObjectRef</code> element IDs to their attribute values.
 	 */
-	private Map<String, Map<String, String>> parseDeviceDescription(ZipFile zip, String filename)
+	private Map<String, Map<String, String>> parseDeviceDescription(String filename)
 			throws SAXException, IOException, ParserConfigurationException {
-		ZipEntry deviceEntry = zip.getEntry(filename);
+		ZipEntry deviceEntry = _zip.getEntry(filename);
 		if (deviceEntry == null) {
 			throw new IllegalArgumentException("Unable to find device description " + filename);
 		}
@@ -439,15 +439,23 @@ public class EtsLoader {
 				}
 			}
 		};
-		newSaxParser().parse(zip.getInputStream(deviceEntry), deviceHandler);
+		newParser().parse(_zip.getInputStream(deviceEntry), deviceHandler);
 		return attrById;
 	}
 
-	private SAXParser newSaxParser() throws ParserConfigurationException, SAXException {
+	private SAXParser newParser() throws ParserConfigurationException, SAXException {
 		if (_saxFactory == null) {
 			_saxFactory = SAXParserFactory.newInstance();
 		}
 		return _saxFactory.newSAXParser();
+	}
+
+	private static String formatGroupAddress(String address) {
+		return new GroupAddress(Integer.parseInt(address)).toString();
+	}
+
+	private static String nonEmpty(String value) {
+		return value == null ? null : value.isEmpty() ? null : value;
 	}
 
 }
